@@ -7,3 +7,7 @@ python main.py --model ffed --config calv --sa --dil --only-bsds --resume --iter
 ```bash
 python main.py --model --config calv --sa --dil -j 4 --gpu 0 --datadir /path/to/custom_images --dataset Custom --evaluate /path/to/checkpointxxx.pth 
 ```
+## Reference
+When building our code, we referenced the repositories as follow:
+PidiNet:https://github.com/hellozhuo/pidinet
+XYWNet:https://github.com/PXinTao/XYW-Net
