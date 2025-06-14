@@ -1,48 +1,39 @@
-#===============================================================
-#  A high-precision edge detection model
-#  guided by flow field was proposed
-#  by Yuchen Han, Bing Li et.al.
-#  Some of the codes have not been disclosed yet,
-#  but will be made public after the paper is accepted
-#===============================================================
-
 import math
 import numpy as np
-from .Snack_Conv import DSConv_pro
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .ops import Conv2d
 from .config import config_model, config_model_converted
 
-class FBM(nn.Module):    #Feature broadcast module
+class FBM(nn.Module):
     def __init__(self, inplane, outplane):
         super(FBM, self).__init__()
-        self.get_h = nn.Conv2d(inplane, outplane, 1, bias=False)
-        self.get_l = nn.Conv2d(inplane, outplane, 1, bias=False)
+        self.down_h = nn.Conv2d(inplane, outplane, 1, bias=False)
+        self.down_l = nn.Conv2d(inplane, outplane, 1, bias=False)
         self.ffg = nn.Conv2d(outplane * 2, 2, kernel_size=3, padding=1, bias=False)
     def forward(self, x):
-        l_feature, h_feature = x
+        low_feature, h_feature = x
         h_feature_orign = h_feature
-        h, w = l_feature.size()[2:]
+        h, w = low_feature.size()[2:]
         size = (h, w)
-        l_feature = self.get_l(l_feature)
-        h_feature = self.get_h(h_feature)
+        low_feature = self.down_l(low_feature)
+        h_feature = self.down_h(h_feature)
         h_feature = F.interpolate(h_feature, size=size, mode="bilinear", align_corners=False)
-        flow_field = self.ffg(torch.cat([h_feature, l_feature], 1))
-        h_feature = self.warp(h_feature_orign, flow_field, size=size)
+        flow = self.ffg(torch.cat([h_feature, low_feature], 1))
+        h_feature = self.flow_warp(h_feature_orign, flow, size=size)
         return h_feature
 
     @staticmethod
-    def warp(inputs, flow_field, size):   #inputs是低分辨率
-        out_h, out_w = size  # 对应高分辨率的low-level feature的特征图尺寸
-        n, c, h, w = inputs.size()  # 对应低分辨率的high-level feature的4个输入维度
+    def flow_warp(inputs, flow, size):
+        out_h, out_w = size
+        n, c, h, w = inputs.size()
         norm = torch.tensor([[[[out_w, out_h]]]]).type_as(inputs).to(inputs.device)
         w = torch.linspace(-1.0, 1.0, out_h).view(-1, 1).repeat(1, out_w)
         h = torch.linspace(-1.0, 1.0, out_w).repeat(out_h, 1)
         grid = torch.cat((h.unsqueeze(2), w.unsqueeze(2)), 2)
         grid = grid.repeat(n, 1, 1, 1).type_as(inputs).to(inputs.device)
-        grid = grid + flow_field.permute(0, 2, 3, 1) / norm
+        grid = grid + flow.permute(0, 2, 3, 1) / norm
         output = F.grid_sample(inputs, grid)
         return output
 
@@ -162,14 +153,14 @@ class FFED(nn.Module):
         self.fuseplanes = []
         self.inplane = inplane
         if convert:
-            if pdcs[0] == 'rd':
+            if pdcs[0] == 'als':
                 init_kernel_size = 5
                 init_padding = 2
             else:
                 init_kernel_size = 3
                 init_padding = 1
             self.init_block = nn.Conv2d(3, self.inplane, kernel_size=init_kernel_size, padding=init_padding, bias=False)
-            block_class = PDCBlock_converted  # 使用PCB列表
+            block_class = PDCBlock_converted
             block_res2_class = PDCBlock_converted
         else:
             self.init_block = Conv2d(pdcs[0], 3, self.inplane, kernel_size=3, padding=1)
@@ -212,23 +203,23 @@ class FFED(nn.Module):
             self.attentions = nn.ModuleList()
             self.dilations = nn.ModuleList()
             for i in range(6):
-                self.dilations.append(CDCM(self.fuseplanes[i], self.dil))  # fuseplanes就是每部分block的输出，一共四个
+                self.dilations.append(CDCM(self.fuseplanes[i], self.dil))
                 self.attentions.append(ABSAM(self.dil))
-                self.conv_reduces.append(MapReduce(self.dil))  # MapReduce就是1*1卷积
+                self.conv_reduces.append(MapReduce(self.dil))  #
         elif self.sa:
             self.attentions = nn.ModuleList()
-            for i in range(4):
+            for i in range(6):
                 self.attentions.append(ABSAM(self.fuseplanes[i]))
                 self.conv_reduces.append(MapReduce(self.fuseplanes[i]))
         elif self.dil is not None:
             self.dilations = nn.ModuleList()
-            for i in range(4):
+            for i in range(6):
                 self.dilations.append(CDCM(self.fuseplanes[i], self.dil))
                 self.conv_reduces.append(MapReduce(self.dil))
         else:
-            for i in range(4):
+            for i in range(6):
                 self.conv_reduces.append(MapReduce(self.fuseplanes[i]))
-        self.classifier = nn.Conv2d(6, 1, kernel_size=1)  # has bias
+        self.classifier = nn.Conv2d(6, 1, kernel_size=1)
         nn.init.constant_(self.classifier.weight, 0.25)
         nn.init.constant_(self.classifier.bias, 0)
         print('initialization done')
@@ -285,15 +276,15 @@ class FFED(nn.Module):
         x_fuses = []
         if self.sa and self.dil is not None:
             for i, xi in enumerate([fbm_1_2, fbm_1_3, fbm_1_4, fbm_2_3,fbm_2_4,fbm_3_4]):
-                x_fuses.append(self.attentions[i](self.dilations[i](xi)))  # dilations对应CDCM，attentions对应CAM
+                x_fuses.append(self.attentions[i](self.dilations[i](xi)))
         elif self.sa:
-            for i, xi in enumerate([x1, x2, x3, x4]):
+            for i, xi in enumerate([fbm_1_2, fbm_1_3, fbm_1_4, fbm_2_3,fbm_2_4,fbm_3_4]):
                 x_fuses.append(self.attentions[i](xi))
         elif self.dil is not None:
-            for i, xi in enumerate([x1, x2, x3, x4]):
+            for i, xi in enumerate([fbm_1_2, fbm_1_3, fbm_1_4, fbm_2_3,fbm_2_4,fbm_3_4]):
                 x_fuses.append(self.dilations[i](xi))
         else:
-            x_fuses = [x1, x2, x3, x4]
+            x_fuses = [fbm_1_2, fbm_1_3, fbm_1_4, fbm_2_3,fbm_2_4,fbm_3_4]
 
 
         e1 = self.conv_reduces[0](x_fuses[0])
@@ -311,12 +302,12 @@ class FFED(nn.Module):
 
 
         outputs = [e1, e2, e3, e4,e5,e6]
-        output = self.classifier(torch.cat(outputs, dim=1))  # classifier是1*1卷积
+        output = self.classifier(torch.cat(outputs, dim=1))
         outputs.append(output)
         outputs = [torch.sigmoid(r) for r in outputs]
         return outputs
 def ffed(args):
-    pdcs = config_model(args.config)  #
+    pdcs = config_model(args.config)
     dil = 24 if args.dil else None
     return FFED(60, pdcs, dil=dil, sa=args.sa)
 
