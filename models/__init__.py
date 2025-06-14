@@ -1,3 +1,2 @@
-from .ffed import  pidinet
-
+from .ffed import ffed
 
