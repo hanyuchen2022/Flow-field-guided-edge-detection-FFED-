@@ -35,7 +35,7 @@ class Conv2d(nn.Module):
     def forward(self, input):
         return self.pdc(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
 
-## cd, ad, rd convolutions
+## cd, ad, als convolutions
 def createConvFunc(op_type):
     assert op_type in ['cv', 'cd', 'ad', 'rd','als'], 'unknown op type: %s' % str(op_type)
     if op_type == 'cv':
