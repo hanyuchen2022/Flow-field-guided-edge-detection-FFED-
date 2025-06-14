@@ -1,10 +1,6 @@
 
 #===============================================================
-#  A high-precision edge detection model
-#  guided by flow field was proposed
-#  by Yuchen Han, Bing Li et.al.
-#  Some of the codes have not been disclosed yet,
-#  but will be made public after the paper is accepted
+#  A edge detection model, FFED
 #===============================================================
 from __future__ import absolute_import
 from __future__ import unicode_literals
@@ -83,7 +79,7 @@ def main(running_file):
     global args
     if args.seed is None:
         args.seed = int(time.time())
-    torch.manual_seed(args.seed)  #设置生成随机数的 种子 ，方便下次复现实验结果
+    torch.manual_seed(args.seed)  
     torch.cuda.manual_seed_all(args.seed)
     args.use_cuda = torch.cuda.is_available()
     if args.lr_steps is not None and not isinstance(args.lr_steps, list):
@@ -117,7 +113,7 @@ def main(running_file):
             '\trelu weights: lr %.6f, wd %.6f') % \
             (args.lr, args.wd, args.lr, args.wd * 0.1, args.lr, 0.0)
     print(info)
-    running_file.write('\n%s\n' % info) #向文件中写入
+    running_file.write('\n%s\n' % info) 
     running_file.flush()
 
     if args.opt == 'adam':
@@ -157,8 +153,8 @@ def main(running_file):
     log_file = os.path.join(args.savedir, '%s_log.txt' % args.model)
 
     args.start_epoch = 0
-    if args.evaluate is not None:             #args.evaluate：要评估的检查点的完整路径
-        checkpoint = load_checkpoint(args, running_file)     #checkpoint其实就是oth文件中的各个层卷积核的权重
+    if args.evaluate is not None:             
+        checkpoint = load_checkpoint(args, running_file)     
         if checkpoint is not None:
             args.start_epoch = checkpoint['epoch'] + 1
             model.load_state_dict(checkpoint['state_dict'],strict=False)
@@ -184,7 +180,7 @@ def main(running_file):
 
         log = "Epoch %03d/%03d: train-loss %s | lr %s | Time %s\n" % \
               (epoch, args.epochs, tr_avg_loss, lr_str, time.strftime('%Y-%m-%d %H:%M:%S'))
-        with open(log_file, 'a') as f:  #打开一个文件用于追加。如果该文件已存在，文件指针将会放在文件的结尾
+        with open(log_file, 'a') as f:  
             f.write(log)
 
         saveID = save_checkpoint({
